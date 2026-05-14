@@ -1,5 +1,7 @@
 # Aprovisionamiento-de-red-WiFi
 
+### Integrantes: Martin Ortega, Alejandro Riveros, Juan Camilo Torres
+
 ## Descripción del proyecto
 
 Este proyecto implementa un sistema de aprovisionamiento WiFi para un microcontrolador ESP32. El objetivo es permitir que el usuario configure la red WiFi del dispositivo sin necesidad de modificar el código fuente cada vez que cambie de red.
