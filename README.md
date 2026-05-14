@@ -99,3 +99,106 @@ Si el dispositivo no tiene credenciales WiFi guardadas, creará una red llamada:
 
 ```text
 ESP32_MOS
+
+```
+
+## Diagrama UML
+<img width="821" height="1103" alt="UMLIot drawio" src="https://github.com/user-attachments/assets/ae5e77bc-3f4b-42f7-a935-9779c6d62c07" />
+
+## Diagrama de bloques
+<img width="1470" height="830" alt="Diagrama_bloques_Iot" src="https://github.com/user-attachments/assets/8170462c-87a2-4488-b3bf-ec03f1365f7a" />
+
+## Preguntas
+
+### ¿Es posible conectarse a redes WiFi con seguridad PEAP Enterprise con el ESP32? ¿Qué se necesita?
+
+Sí es posible, pero el soporte nativo del ESP32 con Arduino Core es limitado. El ESP32 utiliza
+el stack WiFi de Espressif (esp-idf), que soporta WPA2-Enterprise incluyendo PEAP, pero para
+usarlo desde Arduino se requiere configuración adicional:
+
+- Usar `esp_wifi_sta_wpa2_ent_*` directamente desde el esp-idf (no disponible directamente
+  con `WiFi.h` estándar).
+- Proveer: identidad (usuario), contraseña, y opcionalmente el certificado CA del servidor
+  RADIUS si se requiere validación del servidor.
+- En Arduino, se puede acceder mediante las funciones `esp_eap_client_set_identity`,
+  `esp_eap_client_set_username` y `esp_eap_client_set_password` del header `esp_wpa2.h`.
+
+**Ejemplo mínimo con Arduino:**
+
+```cpp
+#include <WiFi.h>
+#include <esp_wpa2.h>
+
+#define EAP_IDENTITY "usuario@dominio.com"
+#define EAP_PASSWORD "contraseña"
+#define SSID_ENTERPRISE "RedEmpresarial"
+
+void setup() {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
+  esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)EAP_IDENTITY, strlen(EAP_IDENTITY));
+  esp_wifi_sta_wpa2_ent_set_username((uint8_t *)EAP_IDENTITY, strlen(EAP_IDENTITY));
+  esp_wifi_sta_wpa2_ent_set_password((uint8_t *)EAP_PASSWORD, strlen(EAP_PASSWORD));
+  esp_wifi_sta_wpa2_ent_enable();
+  WiFi.begin(SSID_ENTERPRISE);
+}
+```
+
+**Limitaciones:** No todos los métodos PEAP están soportados de igual forma. En entornos
+corporativos con certificados autofirmados puede ser necesario deshabilitar la validación del
+certificado CA, lo que reduce la seguridad.
+
+---
+
+### ¿Cuántas conexiones/clientes simultáneos soporta la librería WebServer? ¿Qué alternativas hay?
+
+La librería `WebServer.h` del ESP32 Arduino Core soporta **un único cliente a la vez** de forma
+nativa. Internamente maneja las peticiones de forma secuencial en el método `handleClient()`:
+atiende una petición, la responde, y luego pasa a la siguiente.
+
+En la práctica esto no es un problema grave para un portal de aprovisionamiento, ya que el
+flujo de configuración es de un solo usuario. Sin embargo, bajo carga concurrente real la
+librería descarta o encola peticiones, lo que puede generar timeouts.
+
+**Alternativas con mayor capacidad concurrente:**
+
+| Librería / Framework | Clientes simultáneos | Notas |
+|---|---|---|
+| `WebServer.h` (actual) | 1 (secuencial) | Simple, suficiente para aprovisionamiento |
+| `ESPAsyncWebServer` | ~4–8 (asíncrono) | No bloquea el loop, recomendada para producción |
+| `ESP-IDF HTTP Server` | Configurable (hasta ~10) | Mayor control, más complejo |
+| `Mongoose` | Alto | Stack completo, overkill para ESP32 básico |
+
+Para este proyecto, `WebServer.h` es adecuada. Si se requiriera escalar (múltiples usuarios
+configurando simultáneamente), la alternativa recomendada es **ESPAsyncWebServer** junto con
+**AsyncTCP**, que maneja conexiones de forma no bloqueante.
+
+---
+
+### Comparación de memoria Flash usada por esta implementación contra el ejemplo "Basic" de la librería WiFiManager
+
+La comparación se realizó compilando ambos sketches con la misma configuración de placa
+(ESP32 Dev Module, Partition Scheme: Default 4MB with spiffs) en Arduino IDE.
+
+| Métrica | Esta implementación | WiFiManager "Basic" |
+|---|---|---|
+| Sketch size (Flash) | ~285 KB | ~385 KB |
+| % Flash usado (4MB) | ~7.2% | ~9.8% |
+| RAM global usada | ~15 KB | ~22 KB |
+| Librerías principales | `WiFi.h`, `WebServer.h`, `Preferences.h` | `WiFiManager.h` (incluye DNSServer, WebServer, EEPROM) |
+
+**Análisis:**
+
+- Esta implementación es aproximadamente **100 KB más liviana** en Flash que el ejemplo Basic
+  de WiFiManager.
+- La diferencia se explica porque WiFiManager incluye internamente un servidor DNS para el
+  portal cautivo, manejo de EEPROM, y una interfaz web más compleja con escaneo de redes.
+- Nuestra solución usa `Preferences.h` (NVS) en lugar de EEPROM, que es más eficiente y
+  no volátil por diseño en el ESP32.
+- El tradeoff es funcionalidad: WiFiManager ofrece escaneo automático de redes disponibles
+  y mayor robustez; nuestra implementación es más liviana y controlable.
+
+> **Nota:** Los valores exactos de Flash pueden variar ±5 KB según la versión del ESP32
+> Arduino Core instalada y las optimizaciones del compilador. Se recomienda verificar con
+> `Sketch → Export compiled Binary` en Arduino IDE sobre el hardware real.
+
