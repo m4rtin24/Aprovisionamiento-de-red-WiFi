@@ -1,10 +1,5 @@
 # Documentación de Endpoints — ESP32 WiFi Provisioning
  
-Base URL (modo AP):  `http://192.168.4.1`  
-Base URL (modo STA): `http://<IP_asignada_por_router>`
- 
----
- 
 ## `GET /`
  
 Retorna la interfaz web de configuración WiFi.
